@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BAND OAuth Callback</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: Arial, sans-serif;
+    }
+
+    body {
+      margin: 0;
+      padding: 32px 20px;
+      background: #f5f7fb;
+      color: #1f2937;
+    }
+
+    main {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 24px;
+      background: #ffffff;
+      border: 1px solid #dbe2ea;
+      border-radius: 12px;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+    }
+
+    h1 {
+      margin-top: 0;
+      font-size: 24px;
+    }
+
+    code,
+    pre {
+      font-family: Consolas, "Courier New", monospace;
+    }
+
+    .box {
+      margin-top: 16px;
+      padding: 14px;
+      border-radius: 8px;
+      background: #f8fafc;
+      border: 1px solid #dbe2ea;
+      overflow-wrap: anywhere;
+    }
+
+    .label {
+      font-size: 13px;
+      color: #64748b;
+      margin-bottom: 6px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>BAND OAuth Callback</h1>
+    <p>인증이 완료되면 이 페이지 URL의 <code>code</code> 값을 확인해 액세스 토큰 발급에 사용하세요.</p>
+
+    <div class="box">
+      <div class="label">Authorization Code</div>
+      <pre id="code-value">없음</pre>
+    </div>
+
+    <div class="box">
+      <div class="label">Current URL</div>
+      <pre id="full-url"></pre>
+    </div>
+  </main>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("code");
+
+    document.getElementById("code-value").textContent = code || "없음";
+    document.getElementById("full-url").textContent = window.location.href;
+  </script>
+</body>
+</html>

@@ -1,0 +1,37 @@
+name: bot-b
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  run-bot-b:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BAND_ACCESS_TOKEN: ${{ secrets.BAND_ACCESS_TOKEN_B }}
+      BAND_KEY: ${{ secrets.BAND_KEY_B }}
+      GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS_B }}
+      SHEET_URL: ${{ secrets.SHEET_URL_B }}
+      SHEET_NAME: ${{ secrets.SHEET_NAME_B }}
+      BOT_NAME: ${{ secrets.BOT_NAME_B }}
+      BOT_USER_ID: ${{ secrets.BOT_USER_ID_B }}
+      ADMIN_IDS: ${{ secrets.ADMIN_IDS_B }}
+      ATTENDANCE_GOLD: "100"
+      PYTHONUTF8: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run bot B
+        run: python -m bot.main

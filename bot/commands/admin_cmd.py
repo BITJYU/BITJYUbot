@@ -1,0 +1,15 @@
+"""Admin command dispatcher placeholders."""
+
+from __future__ import annotations
+
+from typing import Any
+
+
+async def handle(
+    parsed: dict[str, Any],
+    comment: dict[str, Any],
+    data: dict[str, Any],
+    post_key: str | None = None,
+) -> str:
+    _ = (parsed, comment, data, post_key)
+    return "\uad00\ub9ac\uc790 \uba85\ub839\uc5b4\ub294 \uc544\uc9c1 \uad6c\ud604\ub418\uc9c0 \uc54a\uc558\uc2b5\ub2c8\ub2e4."
