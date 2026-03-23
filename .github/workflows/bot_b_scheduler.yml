@@ -1,12 +1,12 @@
-name: bot-b
+name: bot-b-scheduler
 
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "0 0 * * *"
   workflow_dispatch:
 
 jobs:
-  run-bot-b:
+  run-bot-b-scheduler:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -32,5 +32,5 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run bot B
-        run: python -m bot.main
+      - name: Run bot B scheduler
+        run: python scheduler.py

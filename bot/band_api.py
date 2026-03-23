@@ -107,14 +107,19 @@ async def create_post(
     session: aiohttp.ClientSession,
     config: AppConfig,
     content: str,
-) -> bool:
+) -> dict[str, Any] | None:
     params = {
         "access_token": config.band_access_token,
         "band_key": config.band_key,
         "content": content,
     }
     response = await band_api_call(session, "POST", "/v2/band/post/create", params)
-    return bool(response and response.get("result_data"))
+    if not response:
+        return None
+    result_data = response.get("result_data")
+    if isinstance(result_data, dict):
+        return result_data
+    return None
 
 
 async def post_comment(

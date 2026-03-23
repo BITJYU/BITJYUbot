@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any
 
 import aiohttp
@@ -16,11 +17,13 @@ from .sheets import cleanup_processed_records, is_processed, load_all_data, mark
 COMMENT_INTERVAL_SECONDS = 0.3
 POST_FETCH_LIMIT = 20
 PROCESSED_COMMENT_TYPE = "\ub313\uae00"
-PROCESSED_POST_TYPE = "\uac8c\uc2dc\uae00"
+SHEET_CONFIG = "\uc124\uc815"
+CONFIG_TRACKED_BOT_POST_KEYS = "TRACKED_BOT_POST_KEYS"
+MAX_TRACKED_BOT_POSTS = 200
 
 
 async def main() -> None:
-    """Load data, process recent posts/comments, then flush changes."""
+    """Load data, process bot-authored post comments, then flush changes."""
     config = AppConfig.from_env()
     data = load_all_data(config)
 
@@ -44,9 +47,10 @@ async def run_cycle(
         return
 
     posts = extract_items(posts_response)
-    for post in posts:
-        await process_post(post, session, config, data)
-        await process_post_comments(post, session, config, data)
+    tracked_post_keys = merge_tracked_bot_post_keys(data, config, posts)
+
+    for post_key in tracked_post_keys:
+        await process_post_comments(post_key, session, config, data)
 
     await check_battle_timeouts(session, config, data)
     removed = cleanup_processed_records(data)
@@ -54,43 +58,13 @@ async def run_cycle(
         log_info(f"Removed {removed} expired processed record(s).")
 
 
-async def process_post(
-    post: dict[str, Any],
-    session: aiohttp.ClientSession,
-    config: AppConfig,
-    data: dict[str, Any],
-) -> None:
-    """Process a command embedded in a post body."""
-    post_key = get_post_key(post)
-    if not post_key or is_processed(data, post_key):
-        return
-
-    body = get_text_body(post)
-    if not body or config.bot_name not in body:
-        return
-
-    parsed = parse_command(body)
-    if not parsed:
-        return
-
-    pseudo_comment = build_actor_context(post)
-    result = await dispatch_command(parsed, pseudo_comment, data, post_key=post_key)
-    if not result:
-        return
-
-    success = await post_comment(session, config, post_key, result)
-    if success:
-        mark_processed(data, post_key, PROCESSED_POST_TYPE)
-
-
 async def process_post_comments(
-    post: dict[str, Any],
+    post_key: str,
     session: aiohttp.ClientSession,
     config: AppConfig,
     data: dict[str, Any],
 ) -> None:
-    """Fetch and process comments for a single post."""
-    post_key = get_post_key(post)
+    """Fetch and process comments for a bot-authored post."""
     if not post_key:
         return
 
@@ -155,6 +129,60 @@ def extract_items(response: dict[str, Any]) -> list[dict[str, Any]]:
     if isinstance(items, list):
         return [item for item in items if isinstance(item, dict)]
     return []
+
+
+def is_bot_authored_post(post: dict[str, Any], config: AppConfig) -> bool:
+    author_id = get_author_id(post)
+    return bool(author_id and config.bot_user_id and author_id == config.bot_user_id)
+
+
+def merge_tracked_bot_post_keys(
+    data: dict[str, Any],
+    config: AppConfig,
+    posts: list[dict[str, Any]],
+) -> list[str]:
+    tracked = get_tracked_bot_post_keys(data)
+    found = []
+
+    for post in posts:
+        if not is_bot_authored_post(post, config):
+            continue
+        post_key = get_post_key(post)
+        if post_key:
+            found.append(post_key)
+
+    merged = _unique_preserving_order(found + tracked)
+    merged = merged[:MAX_TRACKED_BOT_POSTS]
+    if merged != tracked:
+        data.setdefault("config", {})[CONFIG_TRACKED_BOT_POST_KEYS] = json.dumps(merged, ensure_ascii=False)
+        data.setdefault("_dirty", set()).add(SHEET_CONFIG)
+    return merged
+
+
+def get_tracked_bot_post_keys(data: dict[str, Any]) -> list[str]:
+    raw = data.get("config", {}).get(CONFIG_TRACKED_BOT_POST_KEYS, "")
+    if isinstance(raw, list):
+        return [str(value) for value in raw if str(value)]
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(str(raw))
+    except (TypeError, json.JSONDecodeError):
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [str(value) for value in parsed if str(value)]
+
+
+def _unique_preserving_order(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+    return result
 
 
 def get_post_key(post: dict[str, Any]) -> str:

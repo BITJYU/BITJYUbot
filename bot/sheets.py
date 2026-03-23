@@ -19,32 +19,35 @@ SCOPES = [
 ]
 
 SHEET_CONFIG = "\uc124\uc815"
-SHEET_USERS = "\uc720\uc800\uc794\uc561"
-SHEET_INVENTORY = "\uc720\uc800\uc778\ubca4\ud1a0\ub9ac"
-SHEET_STATS = "\uc720\uc800\uc2a4\ud0ef"
-SHEET_SHOP = "\uc0c1\uc810\ubaa9\ub85d"
+SHEET_MEMBERS = "\ubaa9\ub85d"
+SHEET_INVENTORY = "\uc778\ubca4\ud1a0\ub9ac"
+SHEET_SHOP = "\uc0c1\uc810"
 SHEET_SKILLS = "\uc2a4\ud0ac\ubaa9\ub85d"
 SHEET_BATTLES = "\uc804\ud22c\uc0c1\ud0dc"
 SHEET_PURCHASE_LOG = "\uad6c\ub9e4\ub0b4\uc5ed"
-SHEET_ATTENDANCE = "\ucd9c\uc11d\ub0b4\uc5ed"
+SHEET_ATTENDANCE = "\ucd9c\uc11d"
 SHEET_SCHEDULED_POSTS = "\uc870\uc0ac\ubaa9\ub85d"
-SHEET_RANDOM = "\ub79c\ub364\ubaa9\ub85d"
+SHEET_RANDOM = "\ub79c\ub364"
 SHEET_PROCESSED = "\ucc98\ub9ac\ub0b4\uc5ed"
 
-SHEET_NAMES = [
+REQUIRED_SHEETS = [
     SHEET_CONFIG,
-    SHEET_USERS,
+    SHEET_MEMBERS,
     SHEET_INVENTORY,
-    SHEET_STATS,
     SHEET_SHOP,
-    SHEET_SKILLS,
-    SHEET_BATTLES,
     SHEET_PURCHASE_LOG,
     SHEET_ATTENDANCE,
-    SHEET_SCHEDULED_POSTS,
     SHEET_RANDOM,
     SHEET_PROCESSED,
 ]
+
+OPTIONAL_SHEETS = [
+    SHEET_SKILLS,
+    SHEET_BATTLES,
+    SHEET_SCHEDULED_POSTS,
+]
+
+ALL_SHEETS = REQUIRED_SHEETS + OPTIONAL_SHEETS
 
 COL_KEY = "\ud0a4"
 COL_VALUE = "\uac12"
@@ -64,25 +67,42 @@ COL_LAST_ACTION_TIME = "\ub9c8\uc9c0\ub9c9\ud589\ub3d9\uc2dc\uac01"
 COL_PROCESSED_TYPE = "\ud0c0\uc785"
 COL_PROCESSED_AT = "\ucc98\ub9ac\uc2dc\uac01"
 
+MEMBER_HEADERS = ["user_id", "\ub2c9\ub124\uc784", "HP", "ATK", "DEF", "SPD", "MP"]
+INVENTORY_HEADERS = [
+    "user_id",
+    "\ub2c9\ub124\uc784",
+    "\uace8\ub4dc",
+    "\uc544\uc774\ud15c\uba85",
+    "\uc218\ub7c9",
+    "\ub0b4\uad6c\ub3c4",
+    "\ub9c8\uc9c0\ub9c9\uc5c5\ub370\uc774\ud2b8",
+]
+DEFAULT_MEMBER_STATS = {
+    "HP": 100,
+    "ATK": 10,
+    "DEF": 5,
+    "SPD": 5,
+    "MP": 50,
+}
+
 
 def load_all_data(config: AppConfig) -> dict[str, Any]:
-    """Load all configured sheets into memory once per run."""
+    """Load configured sheets into memory once per run."""
     spreadsheet = _open_spreadsheet(config)
+    worksheets = _load_worksheets(spreadsheet)
+    raw_records = {
+        name: worksheets[name].get_all_records() if name in worksheets else []
+        for name in ALL_SHEETS
+    }
 
-    worksheets = {}
-    for sheet_name in SHEET_NAMES:
-        try:
-            worksheets[sheet_name] = spreadsheet.worksheet(sheet_name)
-        except Exception as exc:
-            log_error(f"Failed to access sheet '{sheet_name}': {exc}")
-            raise
+    users = _parse_member_rows(raw_records[SHEET_MEMBERS])
+    inventory = _parse_inventory_rows(raw_records[SHEET_INVENTORY], users)
 
-    raw_records = {name: worksheets[name].get_all_records() for name in SHEET_NAMES}
     data = {
         "config": _parse_config_rows(raw_records[SHEET_CONFIG]),
-        "users": _parse_user_rows(raw_records[SHEET_USERS]),
-        "inventory": _parse_inventory_rows(raw_records[SHEET_INVENTORY]),
-        "stats": _parse_stats_rows(raw_records[SHEET_STATS]),
+        "users": users,
+        "inventory": inventory,
+        "stats": users,
         "shop": _parse_shop_rows(raw_records[SHEET_SHOP]),
         "skills": _parse_skill_rows(raw_records[SHEET_SKILLS]),
         "battles": _parse_battle_rows(raw_records[SHEET_BATTLES]),
@@ -105,36 +125,34 @@ def save_dirty_data(data: dict[str, Any]) -> None:
     if not dirty:
         return
 
-    worksheet_map = data["_worksheets"]
+    worksheet_map = data.get("_worksheets", {})
 
     for sheet_name in dirty:
-        if sheet_name == SHEET_USERS:
-            _rewrite_sheet(worksheet_map[sheet_name], _serialize_users(data))
+        worksheet = worksheet_map.get(sheet_name)
+        if worksheet is None:
+            continue
+        if sheet_name == SHEET_MEMBERS:
+            _rewrite_sheet(worksheet, _serialize_members(data), MEMBER_HEADERS)
         elif sheet_name == SHEET_INVENTORY:
-            _rewrite_sheet(worksheet_map[sheet_name], _serialize_inventory(data))
-        elif sheet_name == SHEET_STATS:
-            _rewrite_sheet(worksheet_map[sheet_name], _serialize_stats(data))
+            _rewrite_sheet(worksheet, _serialize_inventory(data), INVENTORY_HEADERS)
         elif sheet_name == SHEET_BATTLES:
-            _rewrite_sheet(worksheet_map[sheet_name], _serialize_battles(data))
+            _rewrite_sheet(worksheet, _serialize_battles(data))
         elif sheet_name == SHEET_PURCHASE_LOG:
-            _rewrite_sheet(worksheet_map[sheet_name], data.get("purchase_log", []))
+            _rewrite_sheet(worksheet, data.get("purchase_log", []))
         elif sheet_name == SHEET_ATTENDANCE:
-            _rewrite_sheet(worksheet_map[sheet_name], _serialize_attendance(data))
+            _rewrite_sheet(worksheet, _serialize_attendance(data))
         elif sheet_name == SHEET_SCHEDULED_POSTS:
-            _rewrite_sheet(worksheet_map[sheet_name], data.get("scheduled_posts", []))
+            _rewrite_sheet(worksheet, data.get("scheduled_posts", []))
         elif sheet_name == SHEET_PROCESSED:
-            _rewrite_sheet(worksheet_map[sheet_name], data.get("_processed_rows", []))
+            _rewrite_sheet(worksheet, data.get("_processed_rows", []))
         elif sheet_name == SHEET_CONFIG:
-            _rewrite_sheet(worksheet_map[sheet_name], _serialize_config(data))
+            _rewrite_sheet(worksheet, _serialize_config(data))
         elif sheet_name == SHEET_SHOP:
-            _rewrite_sheet(worksheet_map[sheet_name], data.get("shop", []))
+            _rewrite_sheet(worksheet, data.get("shop", []))
         elif sheet_name == SHEET_SKILLS:
-            _rewrite_sheet(worksheet_map[sheet_name], _serialize_skills(data))
+            _rewrite_sheet(worksheet, _serialize_skills(data))
         elif sheet_name == SHEET_RANDOM:
-            _rewrite_sheet(
-                worksheet_map[sheet_name],
-                [{COL_ITEM: value} for value in data.get("random_list", [])],
-            )
+            _rewrite_sheet(worksheet, [{COL_ITEM: value} for value in data.get("random_list", [])], [COL_ITEM])
 
     data["_dirty"].clear()
     log_info("Dirty Google Sheets data flushed.")
@@ -175,6 +193,23 @@ def cleanup_processed_records(data: dict[str, Any], retention_days: int = 7) -> 
     return removed_count
 
 
+def _load_worksheets(spreadsheet: gspread.Spreadsheet) -> dict[str, gspread.Worksheet]:
+    worksheets: dict[str, gspread.Worksheet] = {}
+    for sheet_name in REQUIRED_SHEETS:
+        try:
+            worksheets[sheet_name] = spreadsheet.worksheet(sheet_name)
+        except Exception as exc:
+            log_error(f"Failed to access required sheet '{sheet_name}': {exc}")
+            raise
+
+    for sheet_name in OPTIONAL_SHEETS:
+        try:
+            worksheets[sheet_name] = spreadsheet.worksheet(sheet_name)
+        except Exception:
+            continue
+    return worksheets
+
+
 def _open_spreadsheet(config: AppConfig) -> gspread.Spreadsheet:
     credentials_info = json.loads(config.google_credentials)
     credentials = Credentials.from_service_account_info(credentials_info, scopes=SCOPES)
@@ -186,16 +221,21 @@ def _open_spreadsheet(config: AppConfig) -> gspread.Spreadsheet:
     raise ValueError("SHEET_URL or SHEET_NAME must be provided.")
 
 
-def _rewrite_sheet(worksheet: gspread.Worksheet, records: list[dict[str, Any]]) -> None:
-    if not records:
-        worksheet.clear()
+def _rewrite_sheet(
+    worksheet: gspread.Worksheet,
+    records: list[dict[str, Any]],
+    headers: list[str] | None = None,
+) -> None:
+    if headers is None:
+        headers = list(records[0].keys()) if records else []
+
+    worksheet.clear()
+    if not headers:
         return
 
-    headers = list(records[0].keys())
     values = [headers]
     for record in records:
         values.append([record.get(header, "") for header in headers])
-    worksheet.clear()
     worksheet.update(values)
 
 
@@ -203,31 +243,58 @@ def _parse_config_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
     return {row.get(COL_KEY, ""): row.get(COL_VALUE, "") for row in rows if row.get(COL_KEY)}
 
 
-def _parse_user_rows(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+def _parse_member_rows(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     parsed = {}
     for row in rows:
-        user_id = row.get("user_id")
-        if user_id:
-            parsed[user_id] = dict(row)
-    return parsed
-
-
-def _parse_inventory_rows(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
-    parsed: dict[str, list[dict[str, Any]]] = {}
-    for row in rows:
-        user_id = row.get("user_id")
+        user_id = str(row.get("user_id", "") or "").strip()
         if not user_id:
             continue
-        parsed.setdefault(user_id, []).append(dict(row))
+        member = _default_member_record(user_id, str(row.get("\ub2c9\ub124\uc784", "") or user_id))
+        for key in MEMBER_HEADERS:
+            if key in row and row.get(key) not in ("", None):
+                member[key] = row[key]
+        parsed[user_id] = member
     return parsed
 
 
-def _parse_stats_rows(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    parsed = {}
+def _parse_inventory_rows(
+    rows: list[dict[str, Any]],
+    users: dict[str, dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    parsed: dict[str, list[dict[str, Any]]] = {}
+
     for row in rows:
-        user_id = row.get("user_id")
-        if user_id:
-            parsed[user_id] = dict(row)
+        user_id = str(row.get("user_id", "") or "").strip()
+        if not user_id:
+            continue
+
+        nickname = str(row.get("\ub2c9\ub124\uc784", "") or user_id)
+        user = users.setdefault(user_id, _default_member_record(user_id, nickname))
+        if row.get("\uace8\ub4dc", "") not in ("", None):
+            user["\uace8\ub4dc"] = row.get("\uace8\ub4dc", 0)
+        if row.get("\ub9c8\uc9c0\ub9c9\uc5c5\ub370\uc774\ud2b8", "") not in ("", None):
+            user["\ub9c8\uc9c0\ub9c9\uc5c5\ub370\uc774\ud2b8"] = row.get("\ub9c8\uc9c0\ub9c9\uc5c5\ub370\uc774\ud2b8", "")
+
+        item_name = str(row.get("\uc544\uc774\ud15c\uba85", "") or "").strip()
+        if not item_name:
+            parsed.setdefault(user_id, [])
+            continue
+
+        parsed.setdefault(user_id, []).append(
+            {
+                "user_id": user_id,
+                "\ub2c9\ub124\uc784": nickname,
+                "\uc544\uc774\ud15c\uba85": item_name,
+                "\uc218\ub7c9": row.get("\uc218\ub7c9", 0),
+                "\ub0b4\uad6c\ub3c4": row.get("\ub0b4\uad6c\ub3c4", 0),
+            }
+        )
+
+    for user_id, user in users.items():
+        user.setdefault("\uace8\ub4dc", 0)
+        user.setdefault("\ub9c8\uc9c0\ub9c9\uc5c5\ub370\uc774\ud2b8", "")
+        parsed.setdefault(user_id, [])
+
     return parsed
 
 
@@ -284,19 +351,43 @@ def _serialize_config(data: dict[str, Any]) -> list[dict[str, Any]]:
     return [{COL_KEY: key, COL_VALUE: value} for key, value in data.get("config", {}).items()]
 
 
-def _serialize_users(data: dict[str, Any]) -> list[dict[str, Any]]:
-    return list(data.get("users", {}).values())
+def _serialize_members(data: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = []
+    for user_id in sorted(data.get("users", {})):
+        user = data["users"][user_id]
+        rows.append({header: user.get(header, "") for header in MEMBER_HEADERS})
+    return rows
 
 
 def _serialize_inventory(data: dict[str, Any]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for items in data.get("inventory", {}).values():
-        rows.extend(items)
+    users = data.get("users", {})
+    inventory = data.get("inventory", {})
+
+    for user_id in sorted(users):
+        user = users[user_id]
+        items = inventory.get(user_id, [])
+        base = {
+            "user_id": user_id,
+            "\ub2c9\ub124\uc784": user.get("\ub2c9\ub124\uc784", user_id),
+            "\uace8\ub4dc": user.get("\uace8\ub4dc", 0),
+            "\ub9c8\uc9c0\ub9c9\uc5c5\ub370\uc774\ud2b8": user.get("\ub9c8\uc9c0\ub9c9\uc5c5\ub370\uc774\ud2b8", ""),
+        }
+
+        if not items:
+            rows.append({**base, "\uc544\uc774\ud15c\uba85": "", "\uc218\ub7c9": "", "\ub0b4\uad6c\ub3c4": ""})
+            continue
+
+        for item in items:
+            rows.append(
+                {
+                    **base,
+                    "\uc544\uc774\ud15c\uba85": item.get("\uc544\uc774\ud15c\uba85", ""),
+                    "\uc218\ub7c9": item.get("\uc218\ub7c9", 0),
+                    "\ub0b4\uad6c\ub3c4": item.get("\ub0b4\uad6c\ub3c4", 0),
+                }
+            )
     return rows
-
-
-def _serialize_stats(data: dict[str, Any]) -> list[dict[str, Any]]:
-    return list(data.get("stats", {}).values())
 
 
 def _serialize_skills(data: dict[str, Any]) -> list[dict[str, Any]]:
@@ -327,6 +418,20 @@ def _serialize_battles(data: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _serialize_attendance(data: dict[str, Any]) -> list[dict[str, Any]]:
     return list(data.get("attendance", {}).values())
+
+
+def _default_member_record(user_id: str, nickname: str) -> dict[str, Any]:
+    return {
+        "user_id": user_id,
+        "\ub2c9\ub124\uc784": nickname or user_id,
+        "HP": DEFAULT_MEMBER_STATS["HP"],
+        "ATK": DEFAULT_MEMBER_STATS["ATK"],
+        "DEF": DEFAULT_MEMBER_STATS["DEF"],
+        "SPD": DEFAULT_MEMBER_STATS["SPD"],
+        "MP": DEFAULT_MEMBER_STATS["MP"],
+        "\uace8\ub4dc": 0,
+        "\ub9c8\uc9c0\ub9c9\uc5c5\ub370\uc774\ud2b8": "",
+    }
 
 
 def _json_or_default(value: Any, default: Any) -> Any:

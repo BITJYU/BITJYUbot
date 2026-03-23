@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from .commands import admin_cmd, attend_cmd, battle_cmd, economy_cmd, gacha_cmd, random_cmd
+from .commands import attend_cmd, battle_cmd, economy_cmd, gacha_cmd, random_cmd
 
 COMMAND_PATTERN = re.compile(r"\[([^\]]+)\]")
 
@@ -38,13 +38,6 @@ BATTLE_COMMANDS = {
     "\ud68c\ubcf5",
     "\uc804\ud22c\uc0c1\ud0dc",
 }
-ADMIN_COMMANDS = {
-    "\uacb0\ud22c\uc2e0\uccad",
-    "\uc9c0\uae09",
-    "\ucc28\uac10",
-}
-
-
 def parse_command(text: str) -> dict[str, Any] | None:
     """Parse the first [command/arg1/arg2] block from text."""
     match = COMMAND_PATTERN.search(text or "")
@@ -98,9 +91,6 @@ async def dispatch_command(
 
     if command_name in ATTEND_COMMANDS:
         return await attend_cmd.handle(parsed, comment, data)
-
-    if command_name in ADMIN_COMMANDS:
-        return await admin_cmd.handle(parsed, comment, data, post_key=post_key)
 
     if command_name in BATTLE_COMMANDS:
         battle = find_battle_by_post_key(data, post_key or "")
